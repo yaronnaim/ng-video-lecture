@@ -14,6 +14,7 @@ n_embd = 256
 n_head = 6
 n_layer = 6
 dropout = 0.2
+pos_enc = False
 # ------------
 
 torch.manual_seed(1337)
@@ -137,7 +138,7 @@ class Block(nn.Module):
 
 class GPTLanguageModel(nn.Module):
 
-    def __init__(self):
+    def __init__(self, positional_encoding=True):
         super().__init__()
         # each token directly reads off the logits for the next token from a lookup table
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
@@ -145,8 +146,12 @@ class GPTLanguageModel(nn.Module):
         self.blocks = nn.Sequential(*[Block(n_embd, n_head=n_head) for _ in range(n_layer)])
         self.ln_f = nn.LayerNorm(n_embd) # final layer norm
         self.lm_head = nn.Linear(n_embd, vocab_size)
+        # Update if we are going to use positional encoding (default = True)
+        self.positional_enc = positional_encoding
+        print('Positional Encoding = {}'.format(self.positional_enc))
 
-        # better init, not covered in the original GPT video, but important, will cover in followup video
+
+    # better init, not covered in the original GPT video, but important, will cover in followup video
         self.apply(self._init_weights)
 
     def _init_weights(self, module):
@@ -162,8 +167,11 @@ class GPTLanguageModel(nn.Module):
 
         # idx and targets are both (B,T) tensor of integers
         tok_emb = self.token_embedding_table(idx) # (B,T,C)
-        pos_emb = self.position_embedding_table(torch.arange(T, device=device)) # (T,C)
-        x = tok_emb + pos_emb # (B,T,C)
+        if self.positional_enc == True:
+            pos_emb = self.position_embedding_table(torch.arange(T, device=device)) # (T,C)
+            x = tok_emb + pos_emb # (B,T,C)
+        else:
+            x = tok_emb
         x = self.blocks(x) # (B,T,C)
         x = self.ln_f(x) # (B,T,C)
         logits = self.lm_head(x) # (B,T,vocab_size)
@@ -195,7 +203,7 @@ class GPTLanguageModel(nn.Module):
             idx = torch.cat((idx, idx_next), dim=1) # (B, T+1)
         return idx
 
-model = GPTLanguageModel()
+model = GPTLanguageModel(positional_encoding=pos_enc)
 m = model.to(device)
 # print the number of parameters in the model
 print(sum(p.numel() for p in m.parameters())/1e6, 'M parameters')
@@ -222,4 +230,10 @@ for iter in range(max_iters):
 # generate from the model
 context = torch.zeros((1, 1), dtype=torch.long, device=device)
 print(decode(m.generate(context, max_new_tokens=500)[0].tolist()))
-#open('more.txt', 'w').write(decode(m.generate(context, max_new_tokens=10000)[0].tolist()))
+#open('more.txt', 'w').write(decode(m.generate(context,
+# max_new_tokens=10000)[0].tolist()))
+
+if pos_enc:
+    torch.save(model, 'model_with_positional_enc.pt')
+else:
+    torch.save(model, 'model_without_positional_enc.pt')
